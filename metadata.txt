@@ -1,0 +1,17 @@
+[general]
+name=Consulta SIRI
+qgisMinimumVersion=3.0
+description=Consulta el catastro del SIRI (Registro Inmobiliario, Costa Rica) con un clic sobre las capas WMS ya cargadas en el proyecto, y guarda cada predio -geometria reproyectada al CRS del proyecto, y TODOS los campos que devuelve el servidor- en una capa temporal de memoria.
+version=1.0
+author=Carlo Soto Castro
+email=carlo.soto.castro@gmail.com
+
+about=Agrega un boton (activar/desactivar) en la barra de herramientas. Con la herramienta activa, cada clic sobre el mapa hace GetFeatureInfo contra cualquier capa WMS cargada cuyo origen apunte a siri.snitcr.go.cr, muestra un resumen del predio encontrado, y guarda la geometria -reproyectada correctamente desde el EPSG:4326 en que responde el SIRI hacia el CRS del proyecto- junto con todos los campos originales de la respuesta (integros, sin filtrar) en la capa "Consultas SIRI (temporal)". El cuadro de dialogo en pantalla es solo un resumen; lo guardado no lo es.
+
+tracker=
+repository=
+homepage=
+
+category=Vector
+experimental=False
+deprecated=False
