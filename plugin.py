@@ -21,9 +21,9 @@ Dos cuidados que motivaron este plugin:
 
 2. Campos: el cuadro de dialogo en pantalla muestra nada mas un resumen
    (plano, finca, identifica, ubicacion, area), pero la capa guardada
-   conserva TODOS los campos que devuelve el servidor, integros -mas cuatro
-   campos propios de procedencia (capa de origen, fecha de consulta, y las
-   coordenadas del clic).
+   conserva TODOS los campos que devuelve el servidor, integros -mas cinco
+   campos propios de procedencia (capa de origen, usuario de QGIS, fecha de
+   consulta, y las coordenadas del clic).
 
 Autor: Carlo Soto Castro
 """
@@ -33,8 +33,8 @@ from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.core import (
-    QgsProject, QgsVectorLayer, QgsRasterLayer, QgsFeature, QgsField,
-    QgsRaster, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
+    QgsApplication, QgsProject, QgsVectorLayer, QgsRasterLayer, QgsFeature,
+    QgsField, QgsRaster, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
 )
 from qgis.gui import QgsMapToolEmitPoint
 
@@ -45,13 +45,22 @@ NOMBRE_CAPA_RESULTADOS = "Consultas SIRI (temporal)"
 FRAGMENTO_FUENTE_SIRI = "siri.snitcr.go.cr"  # para detectar las capas WMS del SIRI en el proyecto, sin depender de como el usuario las haya nombrado
 
 
+def _usuario_qgis():
+    """Quien hizo la consulta -nombre completo del usuario configurado en
+    QGIS (Configuracion > Opciones > General) y, si no esta configurado,
+    el usuario de inicio de sesion del sistema operativo. No depende de un
+    login propio del plugin -es el mismo dato que QGIS ya usa para @user_full_name."""
+    return QgsApplication.userFullName() or QgsApplication.userLoginName()
+
+
 def _campos_propios():
-    """Los 4 campos de procedencia que este plugin agrega a cada predio
+    """Los 5 campos de procedencia que este plugin agrega a cada predio
     guardado, ademas de todos los que trae el servidor. Definidos en un solo
     lugar y reutilizados tanto al crear la capa como al completar una capa
     reutilizada a la que le falten -para que nunca queden a medias."""
     return [
         QgsField("_capa_origen", QVariant.String),
+        QgsField("_usuario_qgis", QVariant.String),
         QgsField("_fecha_consulta", QVariant.String),
         QgsField("_x_clic", QVariant.Double),
         QgsField("_y_clic", QVariant.Double),
@@ -142,6 +151,7 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
         # Metadatos propios de la consulta (prefijo "_" para no chocar con
         # nombres de campo del SIRI).
         nueva.setAttribute("_capa_origen", nombre_capa)
+        nueva.setAttribute("_usuario_qgis", _usuario_qgis())
         nueva.setAttribute("_fecha_consulta", datetime.now().isoformat(timespec="seconds"))
         nueva.setAttribute("_x_clic", punto_proyecto.x())
         nueva.setAttribute("_y_clic", punto_proyecto.y())
