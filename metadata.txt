@@ -1,17 +1,18 @@
 [general]
 name=SIRI CR
 qgisMinimumVersion=3.16
-description=Carga las capas WMS del catastro del SIRI (Registro Inmobiliario, Costa Rica) de un solo clic -sin crear la conexion a mano- y consulta cada predio haciendo clic en el mapa, guardandolo con TODOS sus campos en una capa temporal.
-version=2.1
+description=Loads the Costa Rican cadastre WMS layers (SIRI / Registro Inmobiliario) in one click -no manual connection setup- and identifies each parcel by clicking on the map, saving it with ALL its attributes into a temporary layer. / Carga las capas WMS del catastro del SIRI de un solo clic y consulta cada predio haciendo clic en el mapa.
+version=2.2
 author=Carlo Soto Castro
 email=carlo.soto.castro@gmail.com
 
-about=Agrega una barra de herramientas con dos botones. «Cargar capas» agrega al proyecto las capas WMS del catastro del SIRI (Zona 1, Zona 2, Vias publicas) sin que haya que pasar por el Administrador de fuentes de datos, y permite agregar cualquier otro WMS pegando su URL (lee el GetCapabilities y deja escoger las capas). «Consultar predio» activa una herramienta con la que cada clic sobre el mapa hace GetFeatureInfo contra las capas consultables, muestra un resumen del predio encontrado y guarda la geometria -reproyectada correctamente desde el CRS de la capa WMS hacia el CRS del proyecto- junto con todos los campos originales de la respuesta (integros, sin filtrar) en la capa "Consultas SIRI (temporal)". El cuadro de dialogo en pantalla es solo un resumen; lo guardado no lo es.
+about=Costa Rica only. This plugin adds a toolbar with two buttons. "Cargar capas" (Load layers) adds the cadastre WMS layers published by the Registro Inmobiliario through the national spatial data infrastructure (SNIT) straight into the project -Zona 1, Zona 2 and public roads- without going through the Data Source Manager, and it can also add any other WMS by pasting its URL: the plugin reads the GetCapabilities, lists the layers and lets you pick them. "Consultar predio" (Identify parcel) turns on a map tool: every click runs a GetFeatureInfo against the loaded layers, shows a summary of the parcel found, and saves it -geometry reprojected from the WMS layer CRS to the project CRS, plus every single attribute the server returned, unfiltered- into a temporary memory layer, along with five provenance fields (source layer, QGIS user, timestamp and click coordinates). Written to support forest project registration (RPF) at SINAC. EXTERNAL DEPENDENCY: it needs an internet connection and queries a third-party public service (siri.snitcr.go.cr, Registro Nacional de Costa Rica) that is not affiliated with this project; that service is often slow or intermittent, so the plugin retries before giving up. No other external dependency: it uses only PyQGIS and the Python standard library. ESPANOL: agrega una barra con dos botones. "Cargar capas" agrega al proyecto las capas WMS del catastro del SIRI sin pasar por el Administrador de fuentes de datos, y permite agregar cualquier otro WMS pegando su URL. "Consultar predio" guarda cada predio consultado con todos los campos del servidor integros en una capa temporal. Requiere conexion a internet.
 
 icon=icon.png
 tags=wms,catastro,costa rica,siri,snit,registro inmobiliario,predios,forestal,sinac
 
-changelog=2.1 - Se declara qgisMinimumVersion=3.16, que es la real (se usa QgsBlockingNetworkRequest, de QGIS 3.6+); archivo LICENSE explicito; script empaquetar.sh que arma el ZIP instalable con el nombre de carpeta correcto.
+changelog=2.2 - El plugin pasa a licencia GPLv2 o posterior (antes: derechos reservados), con el texto completo en LICENSE y cabecera en cada archivo; descripcion y about en ingles, como pide el repositorio oficial de QGIS.
+    2.1 - Se declara qgisMinimumVersion=3.16, que es la real (se usa QgsBlockingNetworkRequest, de QGIS 3.6+); archivo LICENSE explicito; script empaquetar.sh que arma el ZIP instalable con el nombre de carpeta correcto.
     2.0 - Carga directa de las capas WMS del catastro (SIRI / Registro Inmobiliario del SNIT) desde el propio plugin, sin crear la conexion a mano; opcion de agregar cualquier otro WMS pegando su URL; barra de herramientas e icono propios; nombre corto (SIRI CR); la consulta ahora usa el CRS real de cada capa en vez de asumir EPSG:4326.
     1.0 - Version inicial: consulta por clic sobre capas WMS del SIRI ya cargadas en el proyecto.
 

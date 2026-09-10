@@ -42,7 +42,12 @@ para poder confirmar y visualizar predios catastrados sin salir de QGIS.
 
 ## Instalación
 
-**Opción A — desde el ZIP de la versión (recomendada):**
+**Opción A — desde el Administrador de complementos de QGIS:**
+
+*Complementos → Administrar e instalar complementos → Todos* → buscá
+**«SIRI CR»** → *Instalar*. Así las actualizaciones te llegan solas.
+
+**Opción B — desde el ZIP de la versión:**
 
 1. Descargá `consulta_siri-<versión>.zip` de la sección *Releases* del
    repositorio.
@@ -56,7 +61,7 @@ para poder confirmar y visualizar predios catastrados sin salir de QGIS.
 > vez, con dos barras de herramientas iguales. El ZIP de *Releases* se arma
 > con `./empaquetar.sh` y trae la carpeta correcta (`consulta_siri`).
 
-**Opción B — copiando la carpeta a mano:**
+**Opción C — copiando la carpeta a mano:**
 
 Copiá esta carpeta completa dentro de la carpeta de complementos de tu
 perfil de QGIS, respetando el nombre `consulta_siri`:
@@ -142,13 +147,14 @@ plugin.
 
 ## Licencia
 
-Todos los derechos reservados — ver [LICENSE](LICENSE). Se permite usarlo e
-instalarlo para el trabajo institucional para el que fue escrito; no se
-autoriza redistribuirlo ni derivar obras de él sin permiso escrito del autor.
+**GPL v2 o posterior** — ver [LICENSE](LICENSE) para el texto completo.
 
-**Por eso este plugin no está en el repositorio oficial de QGIS**
-(plugins.qgis.org): ese repositorio exige licencias compatibles con la
-GPLv2 o posterior, y esta no lo es. La distribución es por este repositorio.
+Es software libre: podés usarlo, estudiarlo, modificarlo y redistribuirlo,
+siempre que las versiones que distribuyas mantengan esta misma licencia y
+conserven la autoría. Es la licencia que exige el repositorio oficial de
+QGIS y la que usa el propio QGIS.
+
+Copyright (C) 2026 Carlo Soto Castro.
 
 ## Descargo de responsabilidad
 
