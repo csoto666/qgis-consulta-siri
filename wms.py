@@ -14,7 +14,8 @@ import time
 import xml.etree.ElementTree as ET
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
-from qgis.PyQt.QtCore import QUrl
+from qgis.PyQt.QtCore import QEventLoop, QUrl
+from qgis.PyQt.QtWidgets import QApplication
 from qgis.PyQt.QtNetwork import QNetworkRequest
 from qgis.core import (
     QgsBlockingNetworkRequest, QgsDataSourceUri, QgsProject, QgsRasterLayer,
@@ -27,8 +28,33 @@ from qgis.core import (
 # pedido, repetido, funciona. Por eso todo lo que sale a ese servicio
 # reintenta antes de darse por vencido; sin esto la capa se crea invalida y
 # el plugin parece roto cuando lo que fallo fue un intento suelto.
-INTENTOS = 4
-ESPERA_ENTRE_INTENTOS = 1.5   # segundos
+INTENTOS = 6
+ESPERA_ENTRE_INTENTOS = 1.0   # segundos; crece en cada reintento (ver _espera)
+ESPERA_MAXIMA = 4.0
+
+
+def _espera(intento):
+    """Espera creciente: no tiene sentido reintentar cinco veces seguidas a
+    un servidor que esta ahogado -conviene darle aire."""
+    return min(ESPERA_ENTRE_INTENTOS * (1.5 ** intento), ESPERA_MAXIMA)
+
+
+def dormir(segundos):
+    """Esperar sin dejar QGIS congelado. Con el servicio del SIRI en mal dia
+    la espera acumulada llega a la media docena de segundos por capa; un
+    time.sleep() pelado deja la ventana sin repintar y el sistema la marca
+    como «no responde», que es peor que la demora en si.
+
+    Se excluyen los eventos de entrada a proposito: se quiere que la ventana
+    se repinte, no que un segundo clic impaciente en el menu dispare otra
+    carga encima de la que ya esta corriendo."""
+    fin = time.monotonic() + segundos
+    while True:
+        restante = fin - time.monotonic()
+        if restante <= 0:
+            return
+        time.sleep(min(restante, 0.05))
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
 # Marca que el plugin le pone a las capas que el mismo carga, para despues
 # saber cuales puede consultar sin adivinar por el nombre ni por el dominio.
@@ -63,7 +89,7 @@ def cargar_capa_wms(uri, titulo, clave_servicio=None, consultable=True,
     capa = None
     for intento in range(intentos):
         if intento:
-            time.sleep(ESPERA_ENTRE_INTENTOS)
+            dormir(_espera(intento))
         capa = QgsRasterLayer(uri, titulo, "wms")
         if capa.isValid():
             break
@@ -153,7 +179,7 @@ def leer_capabilities(url, version="1.1.1", tiempo_espera=30000, intentos=INTENT
     error = None
     for intento in range(intentos):
         if intento:
-            time.sleep(ESPERA_ENTRE_INTENTOS)
+            dormir(_espera(intento))
 
         crudo, error = _pedir_capabilities(url, version, tiempo_espera)
         if crudo is None:

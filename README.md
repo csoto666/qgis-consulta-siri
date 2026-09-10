@@ -94,6 +94,14 @@ con 1,5 s entre intentos) antes de darse por vencido, tanto al cargar las
 capas como al consultar un predio. Si aun así falla, esperá unos segundos y
 volvé a hacer clic.
 
+**El mapa a veces sale en blanco.** Es el mismo problema, pero en el dibujo:
+el `GetMap` que pinta las parcelas lo pide QGIS por su cuenta y el plugin no
+puede reintentarlo. Si las capas están cargadas y el mapa no muestra nada,
+volvé a refrescar (`F5`) hasta que pinte —una vez que pintó, QGIS guarda esa
+imagen en su caché y esa zona ya no se vuelve a caer. La consulta por clic sí
+reintenta sola, así que puede devolverte el predio aunque el dibujo esté en
+blanco.
+
 Ojo con una consecuencia de lo mismo: cuando de verdad no hay predio en el
 punto, el servidor **sí** contesta (con cero entidades). Un diccionario de
 resultados vacío significa que falló la petición, no que el terreno no esté

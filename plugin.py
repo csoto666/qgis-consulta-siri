@@ -33,7 +33,6 @@ Dos cuidados que motivaron este plugin:
 Autor: Carlo Soto Castro
 """
 import os
-import time
 from datetime import datetime
 
 from qgis.PyQt.QtCore import Qt, QVariant
@@ -130,7 +129,7 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
             resultado = None
             for intento in range(wms.INTENTOS):
                 if intento:
-                    time.sleep(wms.ESPERA_ENTRE_INTENTOS)
+                    wms.dormir(wms._espera(intento))
                 try:
                     punto_capa = a_capa.transform(punto_proyecto)
                     extent_capa = a_capa.transformBoundingBox(self.canvas.extent())
@@ -347,6 +346,18 @@ class ConsultaSiriPlugin:
             level=Qgis.Warning if fallidas else Qgis.Info, duration=8)
 
     def _cargar_capas(self, servicio, capas, cargadas, reutilizadas, fallidas):
+        """Dos pasadas. La segunda no es terquedad: QGIS guarda en su cache de
+        red el GetCapabilities que si llego, y todas las capas de un servicio
+        comparten ese documento. O sea que si una capa entro, las que habian
+        fallado antes entran despues al instante, sin volver a salir a la red
+        -medido: 0.0s con el servicio del SIRI al 10% de disponibilidad."""
+        self._intentar_capas(servicio, capas, cargadas, reutilizadas, fallidas)
+        if fallidas and cargadas:
+            reintentar = [c for c in capas if c["titulo"] in fallidas]
+            fallidas.clear()
+            self._intentar_capas(servicio, reintentar, cargadas, reutilizadas, fallidas)
+
+    def _intentar_capas(self, servicio, capas, cargadas, reutilizadas, fallidas):
         for capa in capas:
             uri = wms.uri_wms(
                 servicio["url"], capa["layer"],
