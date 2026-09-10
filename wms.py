@@ -172,7 +172,14 @@ def _pedir_capabilities(url, version, tiempo_espera):
     return bytes(peticion.reply().content()), None
 
 
-def leer_capabilities(url, version="1.1.1", tiempo_espera=30000, intentos=INTENTOS):
+# 60 s, no 30: medido el 2026-09-10, cuando el SIRI esta degradado las
+# respuestas que SI llegan tardan 24-25 s. Con 30 s de tope se cortaban justo
+# las peticiones que iban a funcionar, y el plugin reportaba "caido" un
+# servicio que solo estaba lento. Es el mismo tope que usa QGIS por omision.
+TIEMPO_ESPERA = 60000   # milisegundos
+
+
+def leer_capabilities(url, version="1.1.1", tiempo_espera=TIEMPO_ESPERA, intentos=INTENTOS):
     """Devuelve (lista_de_capas, error). Usa la pila de red de QGIS para que
     respete el proxy y los certificados configurados en el perfil, y reintenta
     -ver el comentario de INTENTOS."""
