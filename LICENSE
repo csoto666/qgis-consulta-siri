@@ -1,0 +1,20 @@
+Copyright (c) 2026 Carlo Soto Castro. Todos los derechos reservados.
+
+Este software no se publica bajo una licencia de código abierto.
+
+Se permite su uso interno para el trabajo institucional para el que fue
+escrito (registro de proyectos forestales del SINAC y consulta del catastro
+del SIRI), incluyendo instalarlo y ejecutarlo en QGIS.
+
+No se autoriza redistribuirlo, publicarlo, sublicenciarlo, ni crear obras
+derivadas a partir de él, en todo o en parte, sin permiso previo y por
+escrito del autor.
+
+Para cualquier uso fuera de lo anterior, contactar a:
+Carlo Soto Castro <carlo.soto.castro@gmail.com>
+
+EL SOFTWARE SE ENTREGA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO. El autor no
+se hace responsable por daños derivados de su uso. Este software consulta
+servicios públicos de terceros (SIRI / Registro Nacional de Costa Rica y
+otros nodos del SNIT) que no están afiliados a este proyecto; su
+disponibilidad y exactitud son responsabilidad de esas entidades.

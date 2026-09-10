@@ -42,12 +42,19 @@ para poder confirmar y visualizar predios catastrados sin salir de QGIS.
 
 ## Instalación
 
-**Opción A — desde ZIP (recomendada):**
+**Opción A — desde el ZIP de la versión (recomendada):**
 
-1. Descargá este repositorio como ZIP (botón *Code → Download ZIP* en
-   GitHub).
+1. Descargá `consulta_siri-<versión>.zip` de la sección *Releases* del
+   repositorio.
 2. En QGIS: *Complementos → Administrar e instalar complementos → Instalar
    desde ZIP* → seleccioná el archivo descargado.
+
+> **No uses el botón *Code → Download ZIP* de GitHub.** Ese genera una
+> carpeta raíz llamada `qgis-consulta-siri-main`, y QGIS toma el nombre de
+> esa carpeta como nombre del complemento: quedaría registrado con otro
+> nombre y, si después lo instalás bien, QGIS cargaría las dos copias a la
+> vez, con dos barras de herramientas iguales. El ZIP de *Releases* se arma
+> con `./empaquetar.sh` y trae la carpeta correcta (`consulta_siri`).
 
 **Opción B — copiando la carpeta a mano:**
 
@@ -135,9 +142,13 @@ plugin.
 
 ## Licencia
 
-Todos los derechos reservados. Este código no está publicado bajo una
-licencia de código abierto; para reutilizarlo fuera de este proyecto,
-contactar al autor.
+Todos los derechos reservados — ver [LICENSE](LICENSE). Se permite usarlo e
+instalarlo para el trabajo institucional para el que fue escrito; no se
+autoriza redistribuirlo ni derivar obras de él sin permiso escrito del autor.
+
+**Por eso este plugin no está en el repositorio oficial de QGIS**
+(plugins.qgis.org): ese repositorio exige licencias compatibles con la
+GPLv2 o posterior, y esta no lo es. La distribución es por este repositorio.
 
 ## Descargo de responsabilidad
 
