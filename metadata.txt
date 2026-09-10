@@ -1,16 +1,21 @@
 [general]
-name=Consulta SIRI
+name=SIRI CR
 qgisMinimumVersion=3.0
-description=Consulta el catastro del SIRI (Registro Inmobiliario, Costa Rica) con un clic sobre las capas WMS ya cargadas en el proyecto, y guarda cada predio -geometria reproyectada al CRS del proyecto, y TODOS los campos que devuelve el servidor- en una capa temporal de memoria.
-version=1.0
+description=Carga las capas WMS del catastro del SIRI (Registro Inmobiliario, Costa Rica) de un solo clic -sin crear la conexion a mano- y consulta cada predio haciendo clic en el mapa, guardandolo con TODOS sus campos en una capa temporal.
+version=2.0
 author=Carlo Soto Castro
 email=carlo.soto.castro@gmail.com
 
-about=Agrega un boton (activar/desactivar) en la barra de herramientas. Con la herramienta activa, cada clic sobre el mapa hace GetFeatureInfo contra cualquier capa WMS cargada cuyo origen apunte a siri.snitcr.go.cr, muestra un resumen del predio encontrado, y guarda la geometria -reproyectada correctamente desde el EPSG:4326 en que responde el SIRI hacia el CRS del proyecto- junto con todos los campos originales de la respuesta (integros, sin filtrar) en la capa "Consultas SIRI (temporal)". El cuadro de dialogo en pantalla es solo un resumen; lo guardado no lo es.
+about=Agrega una barra de herramientas con dos botones. «Cargar capas» agrega al proyecto las capas WMS del catastro del SIRI (Zona 1, Zona 2, Vias publicas) sin que haya que pasar por el Administrador de fuentes de datos, y permite agregar cualquier otro WMS pegando su URL (lee el GetCapabilities y deja escoger las capas). «Consultar predio» activa una herramienta con la que cada clic sobre el mapa hace GetFeatureInfo contra las capas consultables, muestra un resumen del predio encontrado y guarda la geometria -reproyectada correctamente desde el CRS de la capa WMS hacia el CRS del proyecto- junto con todos los campos originales de la respuesta (integros, sin filtrar) en la capa "Consultas SIRI (temporal)". El cuadro de dialogo en pantalla es solo un resumen; lo guardado no lo es.
 
-tracker=
-repository=
-homepage=
+icon=icon.png
+
+changelog=2.0 - Carga directa de las capas WMS del catastro (SIRI / Registro Inmobiliario del SNIT) desde el propio plugin, sin crear la conexion a mano; opcion de agregar cualquier otro WMS pegando su URL; barra de herramientas e icono propios; nombre corto (SIRI CR); la consulta ahora usa el CRS real de cada capa en vez de asumir EPSG:4326.
+    1.0 - Version inicial: consulta por clic sobre capas WMS del SIRI ya cargadas en el proyecto.
+
+tracker=https://github.com/csoto666/qgis-consulta-siri/issues
+repository=https://github.com/csoto666/qgis-consulta-siri
+homepage=https://github.com/csoto666/qgis-consulta-siri
 
 category=Vector
 experimental=False
