@@ -152,7 +152,7 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
                     punto_capa = a_capa.transform(punto_proyecto)
                     extent_capa = a_capa.transformBoundingBox(self.canvas.extent())
                     resultado = capa.dataProvider().identify(
-                        punto_capa, QgsRaster.IdentifyFormatFeature, extent_capa,
+                        punto_capa, QgsRaster.IdentifyFormat.IdentifyFormatFeature, extent_capa,
                         size.width(), size.height())
                 except Exception as e:
                     print(f"[{NOMBRE_CORTO}] error al consultar «{capa.name()}»: {e}")
@@ -274,8 +274,8 @@ class ConsultaSiriPlugin:
         self.boton_capas.setToolTip(
             f"{NOMBRE_CORTO}: cargar las capas WMS del catastro (SIRI) al "
             "proyecto, sin crear la conexión a mano.")
-        self.boton_capas.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.boton_capas.setPopupMode(QToolButton.InstantPopup)
+        self.boton_capas.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.boton_capas.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.boton_capas.setMenu(self._menu_capas())
         self.barra.addWidget(self.boton_capas)
 
@@ -343,7 +343,7 @@ class ConsultaSiriPlugin:
         cargadas, reutilizadas, fallidas = [], [], []
         # Los reintentos contra un servidor intermitente pueden tardar unos
         # segundos; sin el cursor de espera parece que el boton no hizo nada.
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self._cargar_capas(servicio, capas, cargadas, reutilizadas, fallidas)
         finally:
@@ -361,7 +361,7 @@ class ConsultaSiriPlugin:
                 "volvé a intentarlo en unos segundos.")
         self.iface.messageBar().pushMessage(
             NOMBRE_CORTO, " ".join(partes),
-            level=Qgis.Warning if fallidas else Qgis.Info, duration=8)
+            level=Qgis.MessageLevel.Warning if fallidas else Qgis.MessageLevel.Info, duration=8)
 
     def _cargar_capas(self, servicio, capas, cargadas, reutilizadas, fallidas):
         """Dos pasadas. La segunda no es terquedad: QGIS guarda en su cache de
@@ -393,7 +393,7 @@ class ConsultaSiriPlugin:
 
     def _agregar_wms_por_url(self):
         dialogo = DialogoWmsPorUrl(self.iface.mainWindow())
-        if not dialogo.exec_():
+        if not dialogo.exec():
             return
         cargadas, fallidas = [], []
         for url, version, capa, crs in dialogo.seleccion():
@@ -405,7 +405,7 @@ class ConsultaSiriPlugin:
             NOMBRE_CORTO,
             (f"{len(cargadas)} capa(s) agregadas. " if cargadas else "") +
             ("No se pudieron cargar: " + ", ".join(fallidas) if fallidas else ""),
-            level=Qgis.Warning if fallidas else Qgis.Info, duration=8)
+            level=Qgis.MessageLevel.Warning if fallidas else Qgis.MessageLevel.Info, duration=8)
 
     def _guardar_conexiones(self):
         for servicio in SERVICIOS:
@@ -414,7 +414,7 @@ class ConsultaSiriPlugin:
             NOMBRE_CORTO,
             "Servicios guardados como conexiones WMS; aparecen en el panel "
             "Explorador y en el Administrador de fuentes de datos.",
-            level=Qgis.Info, duration=8)
+            level=Qgis.MessageLevel.Info, duration=8)
 
     # --- logica del boton ------------------------------------------------
     def _alternar(self, activar):

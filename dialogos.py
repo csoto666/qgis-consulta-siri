@@ -54,7 +54,7 @@ class DialogoWmsPorUrl(QDialog):
         fila.addWidget(self.boton_conectar)
 
         self.lista = QListWidget()
-        self.lista.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.lista.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.lista.itemSelectionChanged.connect(self._actualizar_boton_ok)
 
         self.mensaje = QLabel(
@@ -63,11 +63,11 @@ class DialogoWmsPorUrl(QDialog):
         self.mensaje.setWordWrap(True)
 
         self.botones = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.botones.accepted.connect(self.accept)
         self.botones.rejected.connect(self.reject)
-        self.botones.button(QDialogButtonBox.Ok).setText("Agregar capas")
-        self.botones.button(QDialogButtonBox.Ok).setEnabled(False)
+        self.botones.button(QDialogButtonBox.StandardButton.Ok).setText("Agregar capas")
+        self.botones.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
 
         disposicion = QVBoxLayout(self)
         formulario = QFormLayout()
@@ -86,7 +86,7 @@ class DialogoWmsPorUrl(QDialog):
 
         self.lista.clear()
         self.mensaje.setText("Consultando el servicio…")
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             capas, error = wms.leer_capabilities(url, self.combo_version.currentText())
         finally:
@@ -102,7 +102,7 @@ class DialogoWmsPorUrl(QDialog):
         for capa in capas:
             marca = "" if capa["consultable"] else "   (no consultable)"
             item = QListWidgetItem(f"{capa['titulo']}  [{capa['layer']}]{marca}")
-            item.setData(Qt.UserRole, capa)
+            item.setData(Qt.ItemDataRole.UserRole, capa)
             self.lista.addItem(item)
         self.mensaje.setText(
             f"{len(capas)} capa(s) disponibles. Escogé una o varias "
@@ -110,7 +110,7 @@ class DialogoWmsPorUrl(QDialog):
         self._actualizar_boton_ok()
 
     def _actualizar_boton_ok(self):
-        self.botones.button(QDialogButtonBox.Ok).setEnabled(
+        self.botones.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
             bool(self.lista.selectedItems()))
 
     # --- resultado ------------------------------------------------------
@@ -121,7 +121,7 @@ class DialogoWmsPorUrl(QDialog):
         crs_proyecto = QgsProject.instance().crs().authid()
         salida = []
         for item in self.lista.selectedItems():
-            capa = item.data(Qt.UserRole)
+            capa = item.data(Qt.ItemDataRole.UserRole)
             salida.append((url, version, capa,
                            wms.escoger_crs(capa["srs"], crs_proyecto)))
         return salida

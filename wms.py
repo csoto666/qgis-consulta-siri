@@ -29,10 +29,9 @@ lo que hace que la gente de SINAC termine trabajando sin el catastro a la
 vista.
 """
 import time
-import xml.etree.ElementTree as ET
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
-from qgis.PyQt.QtCore import QEventLoop, QUrl
+from qgis.PyQt.QtCore import QEventLoop, QUrl, QXmlStreamReader
 from qgis.PyQt.QtWidgets import QApplication
 from qgis.PyQt.QtNetwork import QNetworkRequest
 from qgis.core import (
@@ -72,7 +71,7 @@ def dormir(segundos):
         if restante <= 0:
             return
         time.sleep(min(restante, 0.05))
-        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
 # Marca que el plugin le pone a las capas que el mismo carga, para despues
 # saber cuales puede consultar sin adivinar por el nombre ni por el dominio.
@@ -144,39 +143,140 @@ def url_capabilities(url, version="1.1.1"):
     return urlunsplit((partes.scheme, partes.netloc, partes.path, urlencode(q), ""))
 
 
-def _sin_ns(tag):
-    return tag.split("}", 1)[-1]
+def _sin_doctype(crudo):
+    """Quita la declaracion <!DOCTYPE ...> antes de parsear.
+
+    Dos razones, y las dos importan:
+
+    1. Compatibilidad. El GeoServer del SINAC emite un DOCTYPE mal formado
+       -con un & crudo, sin escapar, dentro de la URL del DTD-, y un parser
+       estricto como el de Qt corta ahi ("Unexpected '&'"). El GetCapabilities
+       es perfectamente valido de ahi en adelante; el DTD no se usa para nada.
+    2. Seguridad. En ese mismo DOCTYPE el servidor publica una direccion
+       interna suya (addaxgeos1:10080). El DOCTYPE es por donde entran los
+       ataques de XML: entidades externas que hacen que el parser lea archivos
+       locales o salga a la red (XXE), y entidades internas que se expanden
+       hasta agotar la memoria. Si se quita, no hay por donde.
+    """
+    inicio = crudo.find(b"<!DOCTYPE")
+    if inicio < 0:
+        return crudo
+    # Hay que respetar el subconjunto interno -<!DOCTYPE x [ ... ]>-, donde
+    # puede haber '>' que no cierran la declaracion.
+    profundidad = 0
+    for i in range(inicio + len(b"<!DOCTYPE"), len(crudo)):
+        caracter = crudo[i:i + 1]
+        if caracter == b"[":
+            profundidad += 1
+        elif caracter == b"]":
+            profundidad -= 1
+        elif caracter == b">" and profundidad <= 0:
+            return crudo[:inicio] + crudo[i + 1:]
+    return crudo[:inicio]
 
 
-def _recorrer_capas(elemento, srs_heredados, acumulado):
-    """Un WMS anida <Layer> dentro de <Layer>; los SRS y el bbox se heredan
-    del padre. Solo interesan las hojas que tienen <Name> (las que se pueden
-    pedir); las intermedias son agrupadores."""
-    srs = set(srs_heredados)
-    nombre = titulo = None
-    consultable = elemento.get("queryable") == "1"
-    hijos = []
+def _leer_texto(lector):
+    """Texto del elemento en el que esta parado el lector."""
+    return lector.readElementText(QXmlStreamReader.ReadElementTextBehaviour.SkipChildElements).strip()
 
-    for hijo in elemento:
-        t = _sin_ns(hijo.tag)
-        if t == "Name" and nombre is None:
-            nombre = (hijo.text or "").strip()
-        elif t == "Title" and titulo is None:
-            titulo = (hijo.text or "").strip()
-        elif t in ("SRS", "CRS") and hijo.text:
-            srs.update(x.strip() for x in hijo.text.split() if x.strip())
-        elif t == "Layer":
-            hijos.append(hijo)
 
-    if nombre:
-        acumulado.append({
-            "layer": nombre,
-            "titulo": titulo or nombre,
-            "consultable": consultable,
-            "srs": sorted(srs),
-        })
-    for hijo in hijos:
-        _recorrer_capas(hijo, srs, acumulado)
+def _parsear_capabilities(crudo):
+    """Saca la lista de capas de un GetCapabilities. Devuelve (capas, error).
+
+    Se usa QXmlStreamReader (de Qt, que QGIS ya trae) y no
+    xml.etree.ElementTree a proposito: esto es XML que llega por la red desde
+    un servidor que no controlamos, y el parser de la biblioteca estandar es
+    vulnerable a los ataques clasicos de XML -entidades que se expanden hasta
+    agotar la memoria («billion laughs»), o que hacen que el parser vaya a
+    leer un archivo local o una URL (XXE). QXmlStreamReader no resuelve
+    entidades externas y limita la expansion de las internas. La alternativa
+    habitual, defusedxml, seria una dependencia externa que QGIS no incluye
+    -habria que pedirle al usuario que la instale para algo que Qt ya
+    resuelve.
+
+    Un WMS anida <Layer> dentro de <Layer> y los SRS se heredan del padre, asi
+    que se lleva una pila con el contexto de cada capa abierta. Solo interesan
+    las que tienen <Name> (las que se pueden pedir); las intermedias son
+    agrupadores. Y solo se miran los <Name>/<Title>/<SRS> que cuelgan
+    directamente de un <Layer>: dentro de <Style> vuelve a haber <Name>, y el
+    <Service> del encabezado tiene el suyo.
+    """
+    lector = QXmlStreamReader(_sin_doctype(crudo))
+    pila_elementos = []      # nombres de elementos abiertos
+    pila_capas = []          # contexto de cada <Layer> abierto
+    capas = []
+    en_capability = False
+    orden = 0
+
+    while not lector.atEnd():
+        ficha = lector.readNext()
+
+        if ficha == QXmlStreamReader.TokenType.StartElement:
+            etiqueta = lector.name()
+            etiqueta = etiqueta if isinstance(etiqueta, str) else str(etiqueta)
+            padre = pila_elementos[-1] if pila_elementos else None
+
+            # Un ServiceException es justamente la respuesta intermitente del
+            # SIRI: quien llama tiene que reintentar, no rendirse.
+            if etiqueta == "ServiceExceptionReport":
+                return [], ("El servicio devolvió un error "
+                            "(respuesta intermitente del servidor).")
+
+            if etiqueta == "Capability":
+                en_capability = True
+
+            if en_capability and etiqueta == "Layer":
+                heredados = set(pila_capas[-1]["srs"]) if pila_capas else set()
+                orden += 1
+                pila_capas.append({
+                    "layer": None,
+                    "titulo": None,
+                    "consultable": str(lector.attributes().value("queryable")) == "1",
+                    "srs": heredados,
+                    "orden": orden,
+                })
+
+            elif pila_capas and padre == "Layer":
+                actual = pila_capas[-1]
+                if etiqueta == "Name" and actual["layer"] is None:
+                    actual["layer"] = _leer_texto(lector)
+                    continue          # readElementText ya consumio el cierre
+                if etiqueta == "Title" and actual["titulo"] is None:
+                    actual["titulo"] = _leer_texto(lector)
+                    continue
+                if etiqueta in ("SRS", "CRS"):
+                    actual["srs"].update(
+                        x for x in _leer_texto(lector).split() if x)
+                    continue
+
+            pila_elementos.append(etiqueta)
+
+        elif ficha == QXmlStreamReader.TokenType.EndElement:
+            etiqueta = lector.name()
+            etiqueta = etiqueta if isinstance(etiqueta, str) else str(etiqueta)
+            if pila_elementos:
+                pila_elementos.pop()
+            if etiqueta == "Capability":
+                en_capability = False
+            elif etiqueta == "Layer" and pila_capas:
+                capa = pila_capas.pop()
+                if capa["layer"]:
+                    capas.append({
+                        "layer": capa["layer"],
+                        "titulo": capa["titulo"] or capa["layer"],
+                        "consultable": capa["consultable"],
+                        "srs": sorted(capa["srs"]),
+                        "orden": capa["orden"],
+                    })
+
+    if lector.hasError():
+        return [], f"La respuesta no es un GetCapabilities válido ({lector.errorString()})."
+
+    # Se recogen al cerrar cada <Layer>, o sea de adentro hacia afuera; se
+    # devuelven en el orden en que aparecen en el documento, que es el que el
+    # usuario ve en la lista.
+    capas.sort(key=lambda c: c.pop("orden"))
+    return capas, None
 
 
 def _pedir_capabilities(url, version, tiempo_espera):
@@ -185,7 +285,7 @@ def _pedir_capabilities(url, version, tiempo_espera):
     if hasattr(peticion, "setTimeout"):   # no existe en QGIS 3.x tempranos
         peticion.setTimeout(tiempo_espera)
     codigo = peticion.get(QNetworkRequest(QUrl(url_capabilities(url, version))), True)
-    if codigo != QgsBlockingNetworkRequest.NoError:
+    if codigo != QgsBlockingNetworkRequest.ErrorCode.NoError:
         return None, peticion.errorMessage() or "No se pudo contactar el servicio."
     return bytes(peticion.reply().content()), None
 
