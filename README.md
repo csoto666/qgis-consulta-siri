@@ -84,6 +84,21 @@ Se pide con **WMS 1.1.1** a propósito: ese servidor devuelve un
 `GetCapabilities` vacío si se le exige `version=1.3.0`. Publica sus capas en
 `EPSG:8908` (CRTM05) y también acepta `4326`, `5367` y `3857`.
 
+## Si falla al cargar («no respondió el servicio»)
+
+El servidor del SIRI responde **de forma intermitente**: medido el
+2026-09-10, cerca de la mitad de las peticiones se van en un `302` hacia
+`/Geoservicios/error` en vez de contestar. No es la red de uno ni la URL —el
+mismo pedido, repetido, funciona. Por eso el plugin **reintenta** (4 veces,
+con 1,5 s entre intentos) antes de darse por vencido, tanto al cargar las
+capas como al consultar un predio. Si aun así falla, esperá unos segundos y
+volvé a hacer clic.
+
+Ojo con una consecuencia de lo mismo: cuando de verdad no hay predio en el
+punto, el servidor **sí** contesta (con cero entidades). Un diccionario de
+resultados vacío significa que falló la petición, no que el terreno no esté
+catastrado —el plugin distingue los dos casos y te lo dice distinto.
+
 ## Otros servicios que se pueden agregar con «Agregar otro WMS»
 
 El SNIT publica el listado completo de nodos en

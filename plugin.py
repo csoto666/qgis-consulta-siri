@@ -33,11 +33,14 @@ Dos cuidados que motivaron este plugin:
 Autor: Carlo Soto Castro
 """
 import os
+import time
 from datetime import datetime
 
 from qgis.PyQt.QtCore import Qt, QVariant
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMenu, QMessageBox, QToolButton
+from qgis.PyQt.QtWidgets import (
+    QAction, QApplication, QMenu, QMessageBox, QToolButton,
+)
 from qgis.core import (
     Qgis, QgsApplication, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
     QgsFeature, QgsField, QgsProject, QgsRaster, QgsRasterLayer, QgsVectorLayer,
@@ -109,6 +112,10 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
         punto_proyecto = self.toMapCoordinates(event.pos())
         crs_proyecto = self.canvas.mapSettings().destinationCrs()
         size = self.canvas.mapSettings().outputSize()
+        # Si TODAS las capas fallaron por red, el mensaje final no puede ser
+        # "no hay predio aqui" -seria mentira, y manda al usuario a buscar el
+        # problema donde no esta.
+        hubo_error_de_servicio = False
 
         for capa in capas_wms:
             # Cada capa puede estar en un CRS distinto -el del servicio con el
@@ -120,17 +127,30 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
             a_capa = QgsCoordinateTransform(crs_proyecto, crs_capa, QgsProject.instance())
             de_capa = QgsCoordinateTransform(crs_capa, crs_proyecto, QgsProject.instance())
 
-            try:
-                punto_capa = a_capa.transform(punto_proyecto)
-                extent_capa = a_capa.transformBoundingBox(self.canvas.extent())
-                resultado = capa.dataProvider().identify(
-                    punto_capa, QgsRaster.IdentifyFormatFeature, extent_capa,
-                    size.width(), size.height())
-            except Exception as e:
-                print(f"[{NOMBRE_CORTO}] error al consultar «{capa.name()}»: {e}")
-                continue
+            resultado = None
+            for intento in range(wms.INTENTOS):
+                if intento:
+                    time.sleep(wms.ESPERA_ENTRE_INTENTOS)
+                try:
+                    punto_capa = a_capa.transform(punto_proyecto)
+                    extent_capa = a_capa.transformBoundingBox(self.canvas.extent())
+                    resultado = capa.dataProvider().identify(
+                        punto_capa, QgsRaster.IdentifyFormatFeature, extent_capa,
+                        size.width(), size.height())
+                except Exception as e:
+                    print(f"[{NOMBRE_CORTO}] error al consultar «{capa.name()}»: {e}")
+                    resultado = None
+                    continue
+                # Un fallo intermitente puede venir disfrazado de respuesta
+                # valida pero con el diccionario de resultados VACIO. Cuando
+                # de verdad no hay predio en el punto, el servidor si contesta
+                # -con una entrada por capa y cero entidades adentro. Por eso
+                # la condicion mira results() y no solo isValid().
+                if resultado.isValid() and resultado.results():
+                    break
 
-            if not resultado.isValid():
+            if resultado is None or not resultado.isValid() or not resultado.results():
+                hubo_error_de_servicio = True
                 continue
 
             for _, tiendas in resultado.results().items():
@@ -143,6 +163,14 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
                         self._guardar(feat_origen, capa.name(), de_capa, punto_proyecto)
                         self._mostrar(feat_origen, capa.name())
                         return
+
+        if hubo_error_de_servicio:
+            QMessageBox.warning(
+                None, NOMBRE_CORTO,
+                "El servicio del SIRI no respondió a la consulta.\n\n"
+                "Ese servidor responde de forma intermitente: probá haciendo "
+                "clic otra vez sobre el mismo punto.")
+            return
 
         QMessageBox.information(
             None, NOMBRE_CORTO,
@@ -296,6 +324,29 @@ class ConsultaSiriPlugin:
     # --- carga de capas ---------------------------------------------------
     def _cargar_servicio(self, servicio, capas):
         cargadas, reutilizadas, fallidas = [], [], []
+        # Los reintentos contra un servidor intermitente pueden tardar unos
+        # segundos; sin el cursor de espera parece que el boton no hizo nada.
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            self._cargar_capas(servicio, capas, cargadas, reutilizadas, fallidas)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        partes = []
+        if cargadas:
+            partes.append("Cargadas: " + ", ".join(cargadas) + ".")
+        if reutilizadas:
+            partes.append("Ya estaban en el proyecto: " + ", ".join(reutilizadas) + ".")
+        if fallidas:
+            partes.append(
+                "No respondió el servicio para: " + ", ".join(fallidas) +
+                ". El servidor del SIRI responde de forma intermitente — "
+                "volvé a intentarlo en unos segundos.")
+        self.iface.messageBar().pushMessage(
+            NOMBRE_CORTO, " ".join(partes),
+            level=Qgis.Warning if fallidas else Qgis.Info, duration=8)
+
+    def _cargar_capas(self, servicio, capas, cargadas, reutilizadas, fallidas):
         for capa in capas:
             uri = wms.uri_wms(
                 servicio["url"], capa["layer"],
@@ -310,18 +361,6 @@ class ConsultaSiriPlugin:
                 cargadas.append(capa["titulo"])
             else:
                 reutilizadas.append(capa["titulo"])
-
-        partes = []
-        if cargadas:
-            partes.append("Cargadas: " + ", ".join(cargadas) + ".")
-        if reutilizadas:
-            partes.append("Ya estaban en el proyecto: " + ", ".join(reutilizadas) + ".")
-        if fallidas:
-            partes.append("No se pudieron cargar: " + ", ".join(fallidas) +
-                          ". Revisá la conexión a internet o si el servicio está caído.")
-        self.iface.messageBar().pushMessage(
-            NOMBRE_CORTO, " ".join(partes),
-            level=Qgis.Warning if fallidas else Qgis.Info, duration=8)
 
     def _agregar_wms_por_url(self):
         dialogo = DialogoWmsPorUrl(self.iface.mainWindow())
