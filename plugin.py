@@ -441,14 +441,14 @@ class ConsultaSiriPlugin:
         compatibilidad con proyectos armados antes de este plugin- cualquier
         capa WMS cuyo origen apunte al SIRI."""
         capas = []
-        for l in QgsProject.instance().mapLayers().values():
-            if not (isinstance(l, QgsRasterLayer) and l.providerType() == "wms"):
+        for capa in QgsProject.instance().mapLayers().values():
+            if not (isinstance(capa, QgsRasterLayer) and capa.providerType() == "wms"):
                 continue
-            marca = l.customProperty(wms.PROP_CONSULTABLE)
+            marca = capa.customProperty(wms.PROP_CONSULTABLE)
             if marca in (True, "true", "True"):
-                capas.append(l)
-            elif marca is None and FRAGMENTO_FUENTE_SIRI in l.source():
-                capas.append(l)
+                capas.append(capa)
+            elif marca is None and FRAGMENTO_FUENTE_SIRI in capa.source():
+                capas.append(capa)
         return capas
 
     def _obtener_capa_resultados(self, campos_modelo):

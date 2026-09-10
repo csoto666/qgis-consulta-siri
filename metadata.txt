@@ -2,7 +2,7 @@
 name=SIRI CR
 qgisMinimumVersion=3.16
 description=Loads the Costa Rican cadastre WMS layers (SIRI / Registro Inmobiliario) in one click -no manual connection setup- and identifies each parcel by clicking on the map, saving it with ALL its attributes into a temporary layer. / Carga las capas WMS del catastro del SIRI de un solo clic y consulta cada predio haciendo clic en el mapa.
-version=2.3
+version=2.4
 author=Carlo Soto Castro
 email=carlo.soto.castro@gmail.com
 
@@ -11,7 +11,8 @@ about=Costa Rica only. This plugin adds a toolbar with two buttons. "Cargar capa
 icon=icon.png
 tags=wms,catastro,costa rica,siri,snit,registro inmobiliario,predios,forestal,sinac
 
-changelog=2.3 - El GetCapabilities se parsea con QXmlStreamReader (Qt) en vez de xml.etree, y se descarta el DOCTYPE: cierra los ataques de XML sobre respuestas de servidores remotos (XXE y expansion de entidades) sin agregar dependencias. Ademas arregla la compatibilidad con Qt6/QGIS 4: enums calificados y exec() en vez de exec_().
+changelog=2.4 - Arregla un fallo introducido en la 2.3: leer_capabilities habia quedado llamando al parser viejo, ya borrado, asi que «Agregar otro WMS» reventaba con NameError. Ahora se verifica con flake8, pyflakes y bandit, los tres sin avisos.
+    2.3 - El GetCapabilities se parsea con QXmlStreamReader (Qt) en vez de xml.etree, y se descarta el DOCTYPE: cierra los ataques de XML sobre respuestas de servidores remotos (XXE y expansion de entidades) sin agregar dependencias. Ademas arregla la compatibilidad con Qt6/QGIS 4: enums calificados y exec() en vez de exec_().
     2.2 - El plugin pasa a licencia GPLv2 o posterior (antes: derechos reservados), con el texto completo en LICENSE y cabecera en cada archivo; descripcion y about en ingles, como pide el repositorio oficial de QGIS.
     2.1 - Se declara qgisMinimumVersion=3.16, que es la real (se usa QgsBlockingNetworkRequest, de QGIS 3.6+); archivo LICENSE explicito; script empaquetar.sh que arma el ZIP instalable con el nombre de carpeta correcto.
     2.0 - Carga directa de las capas WMS del catastro (SIRI / Registro Inmobiliario del SNIT) desde el propio plugin, sin crear la conexion a mano; opcion de agregar cualquier otro WMS pegando su URL; barra de herramientas e icono propios; nombre corto (SIRI CR); la consulta ahora usa el CRS real de cada capa en vez de asumir EPSG:4326.

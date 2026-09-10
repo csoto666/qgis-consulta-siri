@@ -73,6 +73,7 @@ def dormir(segundos):
         time.sleep(min(restante, 0.05))
         QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
+
 # Marca que el plugin le pone a las capas que el mismo carga, para despues
 # saber cuales puede consultar sin adivinar por el nombre ni por el dominio.
 PROP_CONSULTABLE = "consulta_siri/consultable"
@@ -310,27 +311,13 @@ def leer_capabilities(url, version="1.1.1", tiempo_espera=TIEMPO_ESPERA, intento
         if crudo is None:
             continue
 
-        try:
-            raiz = ET.fromstring(crudo)
-        except ET.ParseError as e:
-            error = f"La respuesta no es un GetCapabilities válido ({e})."
-            continue
-
-        # Un ServiceException es justamente la respuesta intermitente del
-        # SIRI: hay que volver a intentar, no rendirse.
-        if _sin_ns(raiz.tag) == "ServiceExceptionReport":
-            error = "El servicio devolvió un error (respuesta intermitente del servidor)."
-            continue
-
-        capas = []
-        for elemento in raiz.iter():
-            if _sin_ns(elemento.tag) == "Capability":
-                for hijo in elemento:
-                    if _sin_ns(hijo.tag) == "Layer":
-                        _recorrer_capas(hijo, set(), capas)
-                break
+        capas, error = _parsear_capabilities(crudo)
         if capas:
             return capas, None
+        if error:
+            # Puede ser un ServiceException -la respuesta intermitente del
+            # SIRI- o XML cortado a medias: en los dos casos vale reintentar.
+            continue
 
         error = ("El servicio respondió pero no declaró ninguna capa. "
                  "Algunos servidores solo listan sus capas con la versión "
