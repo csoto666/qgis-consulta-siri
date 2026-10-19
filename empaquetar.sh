@@ -16,7 +16,7 @@ TEMP=$(mktemp -d)
 
 mkdir "$TEMP/$PAQUETE"
 # Solo lo que el plugin necesita en tiempo de ejecucion, mas README y LICENSE.
-for f in __init__.py plugin.py wms.py dialogos.py servicios.py \
+for f in __init__.py plugin.py wms.py dialogos.py servicios.py busqueda.py \
          metadata.txt icon.png icon.svg README.md LICENSE; do
     cp "$f" "$TEMP/$PAQUETE/"
 done

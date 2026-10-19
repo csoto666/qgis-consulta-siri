@@ -20,7 +20,7 @@
 """
 SIRI CR
 =======
-Barra de herramientas con dos cosas:
+Barra de herramientas con tres cosas:
 
 1. «Cargar capas»: agrega al proyecto las capas WMS del catastro del SIRI
    (Registro Inmobiliario del SNIT) de un solo clic, sin que el usuario tenga
@@ -30,6 +30,13 @@ Barra de herramientas con dos cosas:
 2. «Consultar predio» (activar/desactivar): con la herramienta activa, cada
    clic sobre el mapa hace GetFeatureInfo contra las capas consultables y
    guarda el predio encontrado en una capa temporal de memoria.
+
+3. «Buscar predio»: lo mismo pero por numero de finca o de plano, con el
+   buscador del visor publico del SNIT (ver busqueda.py).
+
+Funciona en QGIS 3 y en QGIS 4: donde identify() no se puede leer desde
+Python (algunos builds de QGIS 4), la consulta por clic pide el
+GetFeatureInfo directo en GeoJSON (ver wms.py).
 
 Dos cuidados que motivaron este plugin:
 
@@ -65,6 +72,7 @@ from qgis.core import (
 from qgis.gui import QgsMapToolEmitPoint
 
 from . import wms
+from .busqueda import DialogoBuscarPredio
 from .dialogos import DialogoWmsPorUrl
 from .servicios import SERVICIOS
 
@@ -110,6 +118,10 @@ def _campos_propios():
 class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
     """Herramienta de mapa: clic -> GetFeatureInfo en las capas consultables."""
 
+    # True cuando identify() responde pero sus resultados no se pueden leer
+    # desde Python (QGIS 4): de ahi en adelante se va directo al GeoJSON.
+    identify_no_convierte = False
+
     def __init__(self, canvas, obtener_capas_wms, obtener_capa_resultados):
         super().__init__(canvas)
         self.canvas = canvas
@@ -142,44 +154,23 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
             if not crs_capa.isValid():
                 crs_capa = QgsCoordinateReferenceSystem("EPSG:4326")
             a_capa = QgsCoordinateTransform(crs_proyecto, crs_capa, QgsProject.instance())
-            de_capa = QgsCoordinateTransform(crs_capa, crs_proyecto, QgsProject.instance())
+            punto_capa = a_capa.transform(punto_proyecto)
+            extent_capa = a_capa.transformBoundingBox(self.canvas.extent())
 
-            resultado = None
-            for intento in range(wms.INTENTOS):
-                if intento:
-                    wms.dormir(wms._espera(intento))
-                try:
-                    punto_capa = a_capa.transform(punto_proyecto)
-                    extent_capa = a_capa.transformBoundingBox(self.canvas.extent())
-                    resultado = capa.dataProvider().identify(
-                        punto_capa, QgsRaster.IdentifyFormat.IdentifyFormatFeature, extent_capa,
-                        size.width(), size.height())
-                except Exception as e:
-                    print(f"[{NOMBRE_CORTO}] error al consultar «{capa.name()}»: {e}")
-                    resultado = None
-                    continue
-                # Un fallo intermitente puede venir disfrazado de respuesta
-                # valida pero con el diccionario de resultados VACIO. Cuando
-                # de verdad no hay predio en el punto, el servidor si contesta
-                # -con una entrada por capa y cero entidades adentro. Por eso
-                # la condicion mira results() y no solo isValid().
-                if resultado.isValid() and resultado.results():
-                    break
-
-            if resultado is None or not resultado.isValid() or not resultado.results():
+            entidades, crs_respuesta = self._consultar_capa(
+                capa, punto_capa, extent_capa, size.width(), size.height())
+            if entidades is None:
                 hubo_error_de_servicio = True
                 continue
 
-            for _, tiendas in resultado.results().items():
-                if not isinstance(tiendas, list):
+            de_capa = QgsCoordinateTransform(
+                crs_respuesta or crs_capa, crs_proyecto, QgsProject.instance())
+            for feat_origen in entidades:
+                if not feat_origen.hasGeometry():
                     continue
-                for tienda in tiendas:
-                    for feat_origen in tienda.features():
-                        if not feat_origen.hasGeometry():
-                            continue
-                        self._guardar(feat_origen, capa.name(), de_capa, punto_proyecto)
-                        self._mostrar(feat_origen, capa.name())
-                        return
+                self._guardar(feat_origen, capa.name(), de_capa, punto_proyecto)
+                self._mostrar(feat_origen, capa.name())
+                return
 
         if hubo_error_de_servicio:
             QMessageBox.warning(
@@ -193,60 +184,118 @@ class ConsultaCatastroSiriTool(QgsMapToolEmitPoint):
             None, NOMBRE_CORTO,
             "No hay predio catastrado en ese punto (o cae fuera de zona catastrada).")
 
+    def _consultar_capa(self, capa, punto, extent, ancho, alto):
+        """(entidades, crs_de_las_geometrias) del predio en el punto, con [] si
+        el servidor contesto que ahi no hay nada; (None, None) si no contesto
+        en ninguno de los reintentos. crs None = el de la capa."""
+        for intento in range(wms.INTENTOS):
+            if intento:
+                wms.dormir(wms._espera(intento))
+
+            if not ConsultaCatastroSiriTool.identify_no_convierte:
+                try:
+                    resultado = capa.dataProvider().identify(
+                        punto, QgsRaster.IdentifyFormat.IdentifyFormatFeature, extent,
+                        ancho, alto)
+                except Exception as e:
+                    print(f"[{NOMBRE_CORTO}] error al consultar «{capa.name()}»: {e}")
+                    continue
+                if not resultado.isValid():
+                    continue
+                try:
+                    resultados = resultado.results()
+                except Exception as e:
+                    # QGIS 4: no convierte la QgsFeatureStoreList (ver wms.py,
+                    # seccion GeoJSON). No va a mejorar en esta sesion, asi que
+                    # se recuerda y no se vuelve a intentar.
+                    print(f"[{NOMBRE_CORTO}] identify() no se puede leer en esta "
+                          f"version de QGIS ({e}); se usa GetFeatureInfo GeoJSON.")
+                    ConsultaCatastroSiriTool.identify_no_convierte = True
+                else:
+                    # Un fallo intermitente puede venir disfrazado de respuesta
+                    # valida pero con el diccionario de resultados VACIO. Cuando
+                    # de verdad no hay predio en el punto, el servidor si contesta
+                    # -con una entrada por capa y cero entidades adentro. Por eso
+                    # la condicion mira results() y no solo isValid().
+                    if not resultados:
+                        continue
+                    entidades = []
+                    for tiendas in resultados.values():
+                        if isinstance(tiendas, list):
+                            for tienda in tiendas:
+                                entidades.extend(tienda.features())
+                    return entidades, None
+
+            entidades, crs, error = wms.getfeatureinfo_geojson(capa, punto, extent, ancho, alto)
+            if entidades is not None:
+                return entidades, crs
+            print(f"[{NOMBRE_CORTO}] error al consultar «{capa.name()}»: {error}")
+        return None, None
+
     def _guardar(self, feat_origen, nombre_capa, de_capa, punto_proyecto):
         geom = feat_origen.geometry()
-        geom.transform(de_capa)         # CRS de la capa WMS -> CRS del proyecto
+        geom.transform(de_capa)         # CRS de la respuesta -> CRS del proyecto
         geom.convertToMultiType()       # por si el servidor devuelve Polygon simple
-
         capa_resultados = self.obtener_capa_resultados(feat_origen.fields())
-
-        # Si esta respuesta trae campos que la capa aun no tiene -p.ej. Zona 2
-        # devuelve algo que Zona 1 no trae, o se esta reutilizando una capa
-        # "Consultas SIRI (temporal)" de una sesion anterior con otro
-        # esquema- se agregan sobre la marcha. Se revisan tanto los campos
-        # del servidor como los propios: nunca se descarta un campo del
-        # servidor, y nunca falta un campo de procedencia por reusar una
-        # capa vieja.
-        existentes = {f.name() for f in capa_resultados.fields()}
-        requeridos = list(feat_origen.fields()) + _campos_propios()
-        faltantes = [QgsField(f) for f in requeridos if f.name() not in existentes]
-        if faltantes:
-            capa_resultados.dataProvider().addAttributes(faltantes)
-            capa_resultados.updateFields()
-
-        nueva = QgsFeature(capa_resultados.fields())
-        nueva.setGeometry(geom)
-        # Todos los campos que devolvio el servidor, integros -sin filtrar
-        # ni resumir; lo que se resume es unicamente el cuadro de dialogo.
-        for campo in feat_origen.fields():
-            nueva.setAttribute(campo.name(), feat_origen.attribute(campo.name()))
-        # Metadatos propios de la consulta (prefijo "_" para no chocar con
-        # nombres de campo del SIRI).
-        nueva.setAttribute("_capa_origen", nombre_capa)
-        nueva.setAttribute("_usuario_qgis", _usuario_qgis())
-        nueva.setAttribute("_fecha_consulta", datetime.now().isoformat(timespec="seconds"))
-        nueva.setAttribute("_x_clic", punto_proyecto.x())
-        nueva.setAttribute("_y_clic", punto_proyecto.y())
-
-        capa_resultados.dataProvider().addFeature(nueva)
-        capa_resultados.updateExtents()
-        capa_resultados.triggerRepaint()
+        guardar_predio(capa_resultados, feat_origen, geom, nombre_capa,
+                       punto_proyecto.x(), punto_proyecto.y())
 
     def _mostrar(self, feat_origen, nombre_capa):
-        def val(campo):
-            idx = feat_origen.fieldNameIndex(campo)
-            return feat_origen.attribute(idx) if idx >= 0 else "—"
-        texto = (
-            f"Capa: {nombre_capa}\n"
-            f"Plano: {val('plano')}\n"
-            f"Finca: {val('finca')}\n"
-            f"Identifica: {val('identifica')}\n"
-            f"Provincia/Cantón/Distrito: {val('provincia')}/{val('canton')}/{val('distrito')}\n"
-            f"Área (shape_area): {val('shape_area')}\n\n"
-            f"({len(feat_origen.fields())} campos guardados íntegros en "
-            f"«{NOMBRE_CAPA_RESULTADOS}» — este cuadro es solo un resumen.)")
-        print(texto)
-        QMessageBox.information(None, "Predio encontrado (SIRI)", texto)
+        mostrar_predio(feat_origen, nombre_capa)
+
+
+def guardar_predio(capa_resultados, feat_origen, geom, nombre_capa, x_clic, y_clic):
+    """Agrega el predio a la capa de resultados. geom ya viene en el CRS del
+    proyecto. Lo usan tanto el clic en el mapa como la busqueda por numero
+    (que no tiene clic: ahi x_clic/y_clic van en NULL)."""
+    # Si esta respuesta trae campos que la capa aun no tiene -p.ej. Zona 2
+    # devuelve algo que Zona 1 no trae, o se esta reutilizando una capa
+    # "Consultas SIRI (temporal)" de una sesion anterior con otro
+    # esquema- se agregan sobre la marcha. Se revisan tanto los campos
+    # del servidor como los propios: nunca se descarta un campo del
+    # servidor, y nunca falta un campo de procedencia por reusar una
+    # capa vieja.
+    existentes = {f.name() for f in capa_resultados.fields()}
+    requeridos = list(feat_origen.fields()) + _campos_propios()
+    faltantes = [QgsField(f) for f in requeridos if f.name() not in existentes]
+    if faltantes:
+        capa_resultados.dataProvider().addAttributes(faltantes)
+        capa_resultados.updateFields()
+
+    nueva = QgsFeature(capa_resultados.fields())
+    nueva.setGeometry(geom)
+    # Todos los campos que devolvio el servidor, integros -sin filtrar
+    # ni resumir; lo que se resume es unicamente el cuadro de dialogo.
+    for campo in feat_origen.fields():
+        nueva.setAttribute(campo.name(), feat_origen.attribute(campo.name()))
+    # Metadatos propios de la consulta (prefijo "_" para no chocar con
+    # nombres de campo del SIRI).
+    nueva.setAttribute("_capa_origen", nombre_capa)
+    nueva.setAttribute("_usuario_qgis", _usuario_qgis())
+    nueva.setAttribute("_fecha_consulta", datetime.now().isoformat(timespec="seconds"))
+    nueva.setAttribute("_x_clic", x_clic)
+    nueva.setAttribute("_y_clic", y_clic)
+
+    capa_resultados.dataProvider().addFeature(nueva)
+    capa_resultados.updateExtents()
+    capa_resultados.triggerRepaint()
+
+
+def mostrar_predio(feat_origen, nombre_capa):
+    def val(campo):
+        idx = feat_origen.fieldNameIndex(campo)
+        return feat_origen.attribute(idx) if idx >= 0 else "—"
+    texto = (
+        f"Capa: {nombre_capa}\n"
+        f"Plano: {val('plano')}\n"
+        f"Finca: {val('finca')}\n"
+        f"Identifica: {val('identifica')}\n"
+        f"Provincia/Cantón/Distrito: {val('provincia')}/{val('canton')}/{val('distrito')}\n"
+        f"Área (shape_area): {val('shape_area')}\n\n"
+        f"({len(feat_origen.fields())} campos guardados íntegros en "
+        f"«{NOMBRE_CAPA_RESULTADOS}» — este cuadro es solo un resumen.)")
+    print(texto)
+    QMessageBox.information(None, "Predio encontrado (SIRI)", texto)
 
 
 class ConsultaSiriPlugin:
@@ -255,6 +304,7 @@ class ConsultaSiriPlugin:
         self.canvas = iface.mapCanvas()
         self.barra = None
         self.accion_consultar = None
+        self.accion_buscar = None
         self.boton_capas = None
         self.acciones_menu = []
         self.herramienta = None
@@ -288,6 +338,16 @@ class ConsultaSiriPlugin:
         self.accion_consultar.toggled.connect(self._alternar)
         self.barra.addAction(self.accion_consultar)
         self.iface.addPluginToMenu(f"&{NOMBRE_CORTO}", self.accion_consultar)
+
+        # 3. Busqueda por numero de finca o de plano, sin tener que ubicar el
+        #    predio en el mapa.
+        self.accion_buscar = QAction(icono, "Buscar predio", self.iface.mainWindow())
+        self.accion_buscar.setToolTip(
+            f"{NOMBRE_CORTO}: buscar un predio por número de finca o de plano y "
+            "agregarlo a la capa temporal.")
+        self.accion_buscar.triggered.connect(self._abrir_busqueda)
+        self.barra.addAction(self.accion_buscar)
+        self.iface.addPluginToMenu(f"&{NOMBRE_CORTO}", self.accion_buscar)
 
         self.herramienta = ConsultaCatastroSiriTool(
             self.canvas, self._capas_consultables, self._obtener_capa_resultados)
@@ -327,6 +387,8 @@ class ConsultaSiriPlugin:
             pass
         if self.accion_consultar is not None:
             self.iface.removePluginMenu(f"&{NOMBRE_CORTO}", self.accion_consultar)
+        if self.accion_buscar is not None:
+            self.iface.removePluginMenu(f"&{NOMBRE_CORTO}", self.accion_buscar)
         if self.herramienta is not None and self.canvas.mapTool() is self.herramienta:
             self.canvas.unsetMapTool(self.herramienta)
         if self.barra is not None:
@@ -336,7 +398,26 @@ class ConsultaSiriPlugin:
         self.boton_capas = None
         self.acciones_menu = []
         self.accion_consultar = None
+        self.accion_buscar = None
         self.herramienta = None
+
+    # --- busqueda por finca o plano --------------------------------------
+    def _abrir_busqueda(self):
+        DialogoBuscarPredio(self._guardar_busqueda, self.iface.mainWindow()).exec()
+
+    def _guardar_busqueda(self, zona, feat, crs_origen):
+        proyecto = QgsProject.instance()
+        geom = feat.geometry()
+        geom.transform(QgsCoordinateTransform(crs_origen, proyecto.crs(), proyecto))
+        geom.convertToMultiType()
+        capa_resultados = self._obtener_capa_resultados(feat.fields())
+        # Sin clic de por medio: las coordenadas del clic quedan en NULL en
+        # vez de inventarlas con el centroide.
+        guardar_predio(capa_resultados, feat, geom, f"Búsqueda SNIT ({zona})", None, None)
+        self.iface.setActiveLayer(capa_resultados)
+        caja = geom.boundingBox()
+        self.canvas.setExtent(caja.buffered(max(caja.width(), caja.height()) * 0.2))
+        self.canvas.refresh()
 
     # --- carga de capas ---------------------------------------------------
     def _cargar_servicio(self, servicio, capas):
