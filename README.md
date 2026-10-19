@@ -13,6 +13,10 @@ Costa Rica) a un clic de distancia, dentro de QGIS:
    consulta (`GetFeatureInfo`) las capas cargadas, muestra un resumen del
    predio y lo guarda —geometría y **todos** los campos que devuelve el
    servidor, íntegros— en una capa temporal de memoria.
+3. **Buscar predio** — encuentra un predio por **número de finca** (con su
+   provincia) o por **número de plano**, sin tener que ubicarlo en el mapa, y
+   lo agrega a la misma capa. Usa el buscador del visor público del SNIT.
+   Idea y primera versión del ing. Jonathan Bustillos Arias.
 
 Nació como apoyo para el registro de proyectos forestales (RPF) del SINAC,
 para poder confirmar y visualizar predios catastrados sin salir de QGIS.
@@ -37,7 +41,7 @@ para poder confirmar y visualizar predios catastrados sin salir de QGIS.
 
 ## Requisitos
 
-- QGIS 3.x
+- QGIS 3.16 o posterior, incluido QGIS 4.
 - Conexión a internet (el catastro se consulta en línea contra el SIRI).
 
 ## Instalación
@@ -82,6 +86,24 @@ Instalados*.
    guardado en la capa `"Consultas SIRI (temporal)"`.
 4. Clic de nuevo en el botón (o cambiá de herramienta) para desactivar —
    vuelve sola a la herramienta que tenías antes.
+
+Para buscar por número, usá **«Buscar predio»**: elegí *finca* o *plano*,
+escribí el número (y la provincia, si es finca) y *Buscar*. El predio se
+agrega a la misma capa y el mapa se centra en él. Como no hubo clic, en esos
+registros `_x_clic` y `_y_clic` quedan vacíos, y `_capa_origen` dice
+`Búsqueda SNIT (zona_1)` o `(zona_2)`.
+
+> El buscador por número es el servicio que el visor del SNIT usa por
+> dentro, no una API publicada: si un día cambia, esa búsqueda deja de
+> funcionar, pero la carga de capas y la consulta por clic siguen igual.
+
+### QGIS 3 y QGIS 4
+
+Es el mismo plugin para las dos versiones. En algunos builds de QGIS 4,
+PyQt6 no logra convertir los resultados de la consulta estándar de QGIS
+(`identify()`); cuando pasa, el plugin lo detecta y desde ahí pide el
+`GetFeatureInfo` directamente en GeoJSON, con los mismos reintentos. En
+QGIS 3 todo sigue igual que antes.
 
 La capa de resultados es de memoria: para conservarla, exportala
 (*clic derecho → Exportar → Guardar entidades como…*) antes de cerrar QGIS.

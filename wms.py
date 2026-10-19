@@ -28,15 +28,17 @@ datos -> WMS/WMTS -> Nuevo -> pegar URL -> Conectar -> escoger capa». Eso es
 lo que hace que la gente de SINAC termine trabajando sin el catastro a la
 vista.
 """
+import json
 import time
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
-from qgis.PyQt.QtCore import QEventLoop, QUrl, QXmlStreamReader
+from qgis.PyQt.QtCore import QEventLoop, QUrl, QVariant, QXmlStreamReader
 from qgis.PyQt.QtWidgets import QApplication
 from qgis.PyQt.QtNetwork import QNetworkRequest
 from qgis.core import (
-    QgsBlockingNetworkRequest, QgsDataSourceUri, QgsProject, QgsRasterLayer,
-    QgsSettings,
+    QgsBlockingNetworkRequest, QgsCoordinateReferenceSystem, QgsDataSourceUri,
+    QgsFeature, QgsField, QgsFields, QgsGeometry, QgsJsonUtils, QgsProject,
+    QgsProviderRegistry, QgsRasterLayer, QgsSettings,
 )
 
 # El servidor del SIRI responde de forma intermitente: una de cada dos
@@ -336,3 +338,161 @@ def escoger_crs(srs_disponibles, crs_proyecto):
         if preferido in srs_disponibles:
             return preferido
     return srs_disponibles[0] if srs_disponibles else "EPSG:4326"
+
+
+# --- GeoJSON: GetFeatureInfo sin identify() y buscador del SNIT ------------
+#
+# En algunos builds de QGIS 4 (Qt6/PyQt6), QgsRasterIdentifyResult.results()
+# revienta al convertir a Python la QgsFeatureStoreList que trae adentro
+# -reportado por Jonathan Bustillos con QGIS 4.2.3-. En QGIS 3 funciona. Por
+# eso el plugin sigue usando identify() donde sirve, y solo cuando esa
+# conversion falla pide el GetFeatureInfo directo, en GeoJSON, y arma las
+# entidades a mano con lo de abajo.
+
+def pedir_json(url, tiempo_espera=TIEMPO_ESPERA):
+    """Un GET con la pila de red de QGIS (respeta proxy y certificados del
+    perfil). Devuelve (objeto, error). Un solo intento: reintentar le toca a
+    quien llama, que sabe cuando una respuesta vacia es fallo y cuando no."""
+    peticion = QgsBlockingNetworkRequest()
+    if hasattr(peticion, "setTimeout"):
+        peticion.setTimeout(tiempo_espera)
+    solicitud = QNetworkRequest(QUrl(url))
+    solicitud.setRawHeader(b"User-Agent", b"QGIS-SIRI-CR")
+    codigo = peticion.get(solicitud, True)
+    if codigo != QgsBlockingNetworkRequest.ErrorCode.NoError:
+        return None, peticion.errorMessage() or "No se pudo contactar el servicio."
+    crudo = bytes(peticion.reply().content())
+    try:
+        return json.loads(crudo.decode("utf-8-sig")), None
+    except ValueError:
+        # El SIRI intermitente contesta con una pagina HTML de error en vez
+        # del JSON; se devuelve el comienzo para poder diagnosticarlo.
+        return None, "Respuesta que no es JSON: " + crudo[:200].decode("utf-8", "replace")
+
+
+def _tipo_qvariant(valor):
+    """Tipo de campo para un valor GeoJSON; conserva numeros y booleanos."""
+    if isinstance(valor, bool):
+        return getattr(QVariant, "Bool", QVariant.String)
+    if isinstance(valor, int):
+        return getattr(QVariant, "LongLong", QVariant.Int)
+    if isinstance(valor, float):
+        return QVariant.Double
+    return QVariant.String
+
+
+def geometria_geojson(geom_json):
+    """QgsGeometry desde el objeto 'geometry' de un GeoJSON. Se usa
+    QgsJsonUtils.geometryFromGeoJson donde existe (QGIS 3.36+ y 4) y GDAL/OGR,
+    que viene con todo QGIS, en las versiones anteriores."""
+    texto = json.dumps(geom_json)
+    if hasattr(QgsJsonUtils, "geometryFromGeoJson"):
+        return QgsJsonUtils.geometryFromGeoJson(texto)
+    from osgeo import ogr
+    ogr_geom = ogr.CreateGeometryFromJson(texto)
+    geom = QgsGeometry()
+    if ogr_geom is not None:
+        geom.fromWkb(bytes(ogr_geom.ExportToWkb()))
+    return geom
+
+
+def crs_geojson(objeto):
+    """El CRS que declara un FeatureCollection (miembro 'crs', que GeoServer
+    sigue emitiendo aunque RFC 7946 lo haya quitado), o None si no declara."""
+    try:
+        nombre = objeto["crs"]["properties"]["name"]
+    except (KeyError, TypeError):
+        return None
+    crs = QgsCoordinateReferenceSystem.fromOgcWmsCrs(str(nombre))
+    return crs if crs.isValid() else None
+
+
+def entidades_geojson(features_json):
+    """QgsFeature por cada elemento con geometria. Todos comparten el mismo
+    esquema -la union de las propiedades de todos-, y el tipo de cada campo
+    sale del primer valor no nulo que aparezca."""
+    nombres = []
+    for item in features_json:
+        for nombre in (item.get("properties") or {}):
+            if nombre not in nombres:
+                nombres.append(nombre)
+    campos = QgsFields()
+    for nombre in nombres:
+        muestra = next((item["properties"][nombre] for item in features_json
+                        if (item.get("properties") or {}).get(nombre) is not None), None)
+        campos.append(QgsField(str(nombre), _tipo_qvariant(muestra)))
+
+    salida = []
+    for item in features_json:
+        if not item.get("geometry"):
+            continue
+        geom = geometria_geojson(item["geometry"])
+        if geom.isNull() or geom.isEmpty():
+            continue
+        feat = QgsFeature(campos)
+        feat.setGeometry(geom)
+        props = item.get("properties") or {}
+        feat.setAttributes([props.get(nombre) for nombre in nombres])
+        salida.append(feat)
+    return salida
+
+
+def getfeatureinfo_geojson(capa, punto, extent, ancho, alto):
+    """Un GetFeatureInfo en application/json contra una capa WMS ya cargada,
+    con el punto y la extension en el CRS de la capa. Devuelve
+    (entidades, crs_de_la_respuesta, error); entidades es None si el servicio
+    no respondio, y [] si respondio que no hay nada en ese punto."""
+    uri = QgsProviderRegistry.instance().decodeUri("wms", capa.source())
+    url = uri.get("url", "")
+    capas = uri.get("layers", "")
+    estilos = uri.get("styles", "")
+    if isinstance(capas, (list, tuple)):
+        capas = ",".join(str(c) for c in capas)
+    if isinstance(estilos, (list, tuple)):
+        estilos = ",".join(str(e) for e in estilos)
+    version = uri.get("version") or "1.1.1"
+    crs = capa.crs()
+
+    ancho, alto = max(1, int(ancho)), max(1, int(alto))
+    i = int((punto.x() - extent.xMinimum()) / max(extent.width(), 1e-30) * ancho)
+    j = int((extent.yMaximum() - punto.y()) / max(extent.height(), 1e-30) * alto)
+    i, j = max(0, min(ancho - 1, i)), max(0, min(alto - 1, j))
+
+    caja = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
+    # WMS 1.3.0 respeta el orden de ejes del CRS (lat/lon en EPSG:4326); 1.1.1 no.
+    if version.startswith("1.3") and crs.hasAxisInverted():
+        caja = [caja[1], caja[0], caja[3], caja[2]]
+
+    partes = urlsplit(url)
+    q = dict(parse_qsl(partes.query, keep_blank_values=True))
+    q.update({
+        "SERVICE": "WMS", "VERSION": version, "REQUEST": "GetFeatureInfo",
+        "LAYERS": capas, "QUERY_LAYERS": capas, "STYLES": estilos,
+        "FORMAT": uri.get("format") or "image/png",
+        "INFO_FORMAT": "application/json", "FEATURE_COUNT": "10",
+        "BBOX": ",".join(format(v, ".15g") for v in caja),
+        "WIDTH": str(ancho), "HEIGHT": str(alto),
+    })
+    if version.startswith("1.3"):
+        q.update({"CRS": crs.authid(), "I": str(i), "J": str(j)})
+    else:
+        q.update({"SRS": crs.authid(), "X": str(i), "Y": str(j)})
+    url_consulta = urlunsplit((partes.scheme, partes.netloc, partes.path, urlencode(q), ""))
+
+    objeto, error = pedir_json(url_consulta)
+    if objeto is None:
+        return None, None, error
+    if not isinstance(objeto, dict) or "features" not in objeto:
+        return None, None, "El servicio no devolvió un FeatureCollection."
+    entidades = entidades_geojson(objeto["features"])
+    crs_respuesta = crs_geojson(objeto)
+
+    # En GeoJSON el GeoServer del SIRI aplica una tolerancia de varios pixeles
+    # y devuelve tambien los predios vecinos (medido: 5 donde identify() da 1),
+    # sin garantia de orden. Se deja el que contiene el punto, si hay uno.
+    if crs_respuesta is None or crs_respuesta == crs:
+        punto_geom = QgsGeometry.fromPointXY(punto)
+        contienen = [f for f in entidades if f.geometry().contains(punto_geom)]
+        if contienen:
+            entidades = contienen
+    return entidades, crs_respuesta, None
